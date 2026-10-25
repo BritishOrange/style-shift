@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Смена стиля текста</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:wght@500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="bg"></div>
+    <main class="shell">
+      <header class="header">
+        <p class="brand">StyleShift</p>
+        <h1>Смена стиля текста</h1>
+        <p class="lead">
+          Напишите текст, выберите стиль — локальная нейросеть перефразирует его.
+        </p>
+        <div id="status" class="status status-loading" aria-live="polite">
+          Загрузка модели…
+        </div>
+      </header>
+
+      <section class="panel">
+        <label class="field-label" for="input">Ваш текст</label>
+        <textarea
+          id="input"
+          rows="7"
+          maxlength="2000"
+          placeholder="Например: йо бро, здарова! как сам, чё как делишки?"
+        ></textarea>
+        <div class="meta-row">
+          <span id="counter">0 / 2000</span>
+        </div>
+
+        <label class="field-label" for="style">Стиль</label>
+        <div id="styles" class="styles" role="listbox" aria-label="Стили текста"></div>
+
+        <button id="run" class="btn" type="button" disabled>Перефразировать</button>
+
+        <div id="error" class="error" hidden></div>
+
+        <div id="result-wrap" class="result-wrap" hidden>
+          <label class="field-label" for="output">Результат</label>
+          <textarea id="output" rows="7" readonly></textarea>
+          <button id="copy" class="btn btn-ghost" type="button">Скопировать</button>
+        </div>
+      </section>
+    </main>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
