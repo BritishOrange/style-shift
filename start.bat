@@ -2,22 +2,24 @@
 chcp 65001 >nul
 setlocal
 
-where py >nul 2>&1
-if %ERRORLEVEL%==0 (
-  set PYTHON=py -3
-) else (
-  set PYTHON=python
+where poetry >nul 2>&1
+if errorlevel 1 (
+  echo Poetry not found. Install it first:
+  echo   py -3 -m pip install poetry
+  pause
+  exit /b 1
 )
 
-echo Installing dependencies...
-%PYTHON% -m pip install -r requirements.txt
+echo Ensuring in-project virtualenv...
+poetry config virtualenvs.in-project true --local
+poetry install
 if errorlevel 1 (
-  echo Failed to install dependencies. Make sure Python 3.10+ is installed.
+  echo Failed to install dependencies via Poetry.
   pause
   exit /b 1
 )
 
 echo.
-echo Starting server...
-%PYTHON% app.py
+echo Starting StyleShift...
+poetry run styleshift
 pause

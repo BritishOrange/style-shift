@@ -1,7 +1,45 @@
+# Virtual environment is managed by Poetry in-project (.venv).
+# Keep .venv out of git — lock file + poetry install reproduce it.
 .venv/
+venv/
+env/
+
+# Python
 __pycache__/
-*.pyc
-*.log
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+dist/
+build/
+*.egg
+
+# Tools / caches
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.cache/
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
 .DS_Store
+Thumbs.db
+
+# App / ML artifacts
+*.log
 .model-cache/
 node_modules/
+.huggingface/
+*.pt
+*.bin
+*.safetensors
+
+# Env secrets
+.env
+.env.*
+!.env.example
