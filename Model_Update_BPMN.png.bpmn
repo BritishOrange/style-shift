@@ -1,0 +1,248 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" id="Definitions_1" targetNamespace="http://bpmn.io/schema/bpmn" exporter="bpmn-js (https://demo.bpmn.io)" exporterVersion="18.31.1">
+  <bpmn:collaboration id="Collaboration_1">
+    <bpmn:participant id="Participant_Triggers" name="Scheduler / Triggers" processRef="Process_Triggers" />
+    <bpmn:participant id="Participant_Manager" name="Model Manager" processRef="Process_Manager" />
+    <bpmn:participant id="Participant_Runtime" name="Runtime Update" processRef="Process_Runtime" />
+    <bpmn:messageFlow id="Flow_04q1beu" sourceRef="Task_UpdateConfig" targetRef="Task_Restart" />
+  </bpmn:collaboration>
+  <bpmn:process id="Process_Triggers" isExecutable="false">
+    <bpmn:startEvent id="StartEvent_1" name="Триггер: Timer (7 дней) / Manual">
+      <bpmn:outgoing>Flow_1</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:task id="Task_CheckHF" name="Проверка новой версии на Hugging Face">
+      <bpmn:incoming>Flow_1</bpmn:incoming>
+      <bpmn:outgoing>Flow_2</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:exclusiveGateway id="Gateway_1" name="Есть новая версия?">
+      <bpmn:incoming>Flow_2</bpmn:incoming>
+      <bpmn:outgoing>Flow_4</bpmn:outgoing>
+      <bpmn:outgoing>Flow_3</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:endEvent id="EndEvent_NoUpdate" name="Обновление не требуется">
+      <bpmn:incoming>Flow_4</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_1" sourceRef="StartEvent_1" targetRef="Task_CheckHF" />
+    <bpmn:sequenceFlow id="Flow_2" sourceRef="Task_CheckHF" targetRef="Gateway_1" />
+    <bpmn:sequenceFlow id="Flow_4" name="Нет" sourceRef="Gateway_1" targetRef="EndEvent_NoUpdate" />
+    <bpmn:sequenceFlow id="Flow_3" name="Да" sourceRef="Gateway_1" targetRef="Task_Download" />
+  </bpmn:process>
+  <bpmn:process id="Process_Manager" isExecutable="false">
+    <bpmn:sequenceFlow id="Flow_9" sourceRef="Task_Rollback" targetRef="EndEvent_Rollback" />
+    <bpmn:sequenceFlow id="Flow_8" name="Нет" sourceRef="Gateway_2" targetRef="Task_Rollback" />
+    <bpmn:sequenceFlow id="Flow_7" name="Да" sourceRef="Gateway_2" targetRef="Task_UpdateConfig" />
+    <bpmn:sequenceFlow id="Flow_6" sourceRef="Task_Evaluate" targetRef="Gateway_2" />
+    <bpmn:sequenceFlow id="Flow_5" sourceRef="Task_Download" targetRef="Task_Evaluate" />
+    <bpmn:task id="Task_UpdateConfig" name="Обновление active_model.json">
+      <bpmn:incoming>Flow_7</bpmn:incoming>
+    </bpmn:task>
+    <bpmn:endEvent id="EndEvent_Rollback" name="Откат (Ошибка)">
+      <bpmn:incoming>Flow_9</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:task id="Task_Rollback" name="Удалить кандидата, записать в лог">
+      <bpmn:incoming>Flow_8</bpmn:incoming>
+      <bpmn:outgoing>Flow_9</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:exclusiveGateway id="Gateway_2" name="Метрики лучше текущих?">
+      <bpmn:incoming>Flow_6</bpmn:incoming>
+      <bpmn:outgoing>Flow_7</bpmn:outgoing>
+      <bpmn:outgoing>Flow_8</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:task id="Task_Evaluate" name="Прогон автотестов (BERTScore, Style Acc, RAM)">
+      <bpmn:incoming>Flow_5</bpmn:incoming>
+      <bpmn:outgoing>Flow_6</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Task_Download" name="Скачивание кандидата в отдельную папку">
+      <bpmn:incoming>Flow_3</bpmn:incoming>
+      <bpmn:outgoing>Flow_5</bpmn:outgoing>
+    </bpmn:task>
+  </bpmn:process>
+  <bpmn:process id="Process_Runtime" isExecutable="false">
+    <bpmn:task id="Task_Restart" name="Перезапуск Flask с новой моделью">
+      <bpmn:outgoing>Flow_11</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Task_SmokeTest" name="Smoke-тест на localhost:3000">
+      <bpmn:incoming>Flow_11</bpmn:incoming>
+      <bpmn:outgoing>Flow_12</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:exclusiveGateway id="Gateway_3" name="Тест пройден?">
+      <bpmn:incoming>Flow_12</bpmn:incoming>
+      <bpmn:outgoing>Flow_13</bpmn:outgoing>
+      <bpmn:outgoing>Flow_14</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:endEvent id="EndEvent_Success" name="Модель успешно обновлена">
+      <bpmn:incoming>Flow_13</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_11" sourceRef="Task_Restart" targetRef="Task_SmokeTest" />
+    <bpmn:sequenceFlow id="Flow_12" sourceRef="Task_SmokeTest" targetRef="Gateway_3" />
+    <bpmn:sequenceFlow id="Flow_13" name="Да" sourceRef="Gateway_3" targetRef="EndEvent_Success" />
+    <bpmn:sequenceFlow id="Flow_14" name="Нет" sourceRef="Gateway_3" targetRef="Task_Revert" />
+    <bpmn:sequenceFlow id="Flow_15" sourceRef="Task_Revert" targetRef="EndEvent_Revert" />
+    <bpmn:task id="Task_Revert" name="Откат на предыдущую версию">
+      <bpmn:incoming>Flow_14</bpmn:incoming>
+      <bpmn:outgoing>Flow_15</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:endEvent id="EndEvent_Revert" name="Откат">
+      <bpmn:incoming>Flow_15</bpmn:incoming>
+    </bpmn:endEvent>
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="Collaboration_1">
+      <bpmndi:BPMNShape id="Participant_Triggers_di" bpmnElement="Participant_Triggers" isHorizontal="true">
+        <dc:Bounds x="160" y="80" width="1050" height="160" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="StartEvent_1_di" bpmnElement="StartEvent_1">
+        <dc:Bounds x="220" y="140" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="195" y="106" width="86" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_CheckHF_di" bpmnElement="Task_CheckHF">
+        <dc:Bounds x="320" y="120" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_1_di" bpmnElement="Gateway_1" isMarkerVisible="true">
+        <dc:Bounds x="500" y="135" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="496" y="96" width="57" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_NoUpdate_di" bpmnElement="EndEvent_NoUpdate">
+        <dc:Bounds x="620" y="142" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_1_di" bpmnElement="Flow_1">
+        <di:waypoint x="256" y="158" />
+        <di:waypoint x="320" y="158" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_2_di" bpmnElement="Flow_2">
+        <di:waypoint x="440" y="158" />
+        <di:waypoint x="500" y="158" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_3_di" bpmnElement="Flow_3">
+        <di:waypoint x="525" y="185" />
+        <di:waypoint x="525" y="260" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="533" y="213" width="14" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_4_di" bpmnElement="Flow_4">
+        <di:waypoint x="550" y="160" />
+        <di:waypoint x="620" y="160" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNShape id="Participant_Manager_di" bpmnElement="Participant_Manager" isHorizontal="true">
+        <dc:Bounds x="160" y="260" width="1050" height="240" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Download_di" bpmnElement="Task_Download">
+        <dc:Bounds x="440" y="300" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Evaluate_di" bpmnElement="Task_Evaluate">
+        <dc:Bounds x="600" y="300" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_2_di" bpmnElement="Gateway_2" isMarkerVisible="true">
+        <dc:Bounds x="770" y="315" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="755" y="286" width="79" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Rollback_di" bpmnElement="Task_Rollback">
+        <dc:Bounds x="770" y="400" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_Rollback_di" bpmnElement="EndEvent_Rollback">
+        <dc:Bounds x="940" y="422" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="917" y="393" width="81" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_UpdateConfig_di" bpmnElement="Task_UpdateConfig">
+        <dc:Bounds x="880" y="300" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_5_di" bpmnElement="Flow_5">
+        <di:waypoint x="560" y="340" />
+        <di:waypoint x="600" y="340" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_6_di" bpmnElement="Flow_6">
+        <di:waypoint x="720" y="340" />
+        <di:waypoint x="770" y="340" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_7_di" bpmnElement="Flow_7">
+        <di:waypoint x="820" y="340" />
+        <di:waypoint x="880" y="340" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="843" y="315" width="14" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_8_di" bpmnElement="Flow_8">
+        <di:waypoint x="795" y="365" />
+        <di:waypoint x="795" y="400" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="801" y="373" width="19" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_9_di" bpmnElement="Flow_9">
+        <di:waypoint x="890" y="440" />
+        <di:waypoint x="940" y="440" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNShape id="Participant_Runtime_di" bpmnElement="Participant_Runtime" isHorizontal="true">
+        <dc:Bounds x="160" y="520" width="1050" height="220" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Restart_di" bpmnElement="Task_Restart">
+        <dc:Bounds x="960" y="560" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_SmokeTest_di" bpmnElement="Task_SmokeTest">
+        <dc:Bounds x="730" y="560" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gateway_3_di" bpmnElement="Gateway_3" isMarkerVisible="true">
+        <dc:Bounds x="570" y="575" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="557" y="551" width="75" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_Success_di" bpmnElement="EndEvent_Success">
+        <dc:Bounds x="420" y="582" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="395" y="544" width="87" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_Revert_di" bpmnElement="Task_Revert">
+        <dc:Bounds x="420" y="650" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="EndEvent_Revert_di" bpmnElement="EndEvent_Revert">
+        <dc:Bounds x="360" y="672" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="363" y="708" width="30" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_11_di" bpmnElement="Flow_11">
+        <di:waypoint x="850" y="600" />
+        <di:waypoint x="960" y="600" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_12_di" bpmnElement="Flow_12">
+        <di:waypoint x="730" y="600" />
+        <di:waypoint x="620" y="600" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_13_di" bpmnElement="Flow_13">
+        <di:waypoint x="570" y="600" />
+        <di:waypoint x="456" y="600" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="533" y="575" width="14" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_14_di" bpmnElement="Flow_14">
+        <di:waypoint x="595" y="625" />
+        <di:waypoint x="595" y="690" />
+        <di:waypoint x="540" y="690" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="601" y="633" width="19" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_15_di" bpmnElement="Flow_15">
+        <di:waypoint x="420" y="690" />
+        <di:waypoint x="396" y="690" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_04q1beu_di" bpmnElement="Flow_04q1beu">
+        <di:waypoint x="1000" y="340" />
+        <di:waypoint x="1030" y="340" />
+        <di:waypoint x="1030" y="560" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

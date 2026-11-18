@@ -1,0 +1,347 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+  id="Definitions_StyleShift"
+  targetNamespace="https://github.com/BritishOrange/style-shift"
+  exporter="StyleShift"
+  exporterVersion="1.0">
+
+  <bpmn:collaboration id="Collaboration_StyleShift">
+    <bpmn:participant id="Participant_User" name="Пользователь (браузер)" processRef="Process_User" />
+    <bpmn:participant id="Participant_Service" name="StyleShift Service" processRef="Process_Service" />
+    <bpmn:participant id="Participant_Model" name="Model Runtime (Qwen2.5)" processRef="Process_Model" />
+    <bpmn:messageFlow id="MF_OpenUI" name="Открыть UI" sourceRef="Activity_OpenApp" targetRef="Activity_ServeUI" />
+    <bpmn:messageFlow id="MF_Health" name="GET /api/health" sourceRef="Activity_CheckReady" targetRef="Activity_Health" />
+    <bpmn:messageFlow id="MF_Styles" name="GET /api/styles" sourceRef="Activity_LoadStyles" targetRef="Activity_Styles" />
+    <bpmn:messageFlow id="MF_Rewrite" name="POST /api/rewrite" sourceRef="Activity_Submit" targetRef="Activity_ReceiveRewrite" />
+    <bpmn:messageFlow id="MF_Result" name="JSON результат / ошибка" sourceRef="Activity_Respond" targetRef="Activity_ShowResult" />
+    <bpmn:messageFlow id="MF_Infer" name="Промпт + generate()" sourceRef="Activity_CallModel" targetRef="Activity_Generate" />
+    <bpmn:messageFlow id="MF_Tokens" name="Сгенерированные токены" sourceRef="Activity_Generate" targetRef="Activity_CallModel" />
+    <bpmn:messageFlow id="MF_LoadWeights" name="from_pretrained / кэш HF" sourceRef="Activity_LoadModel" targetRef="Activity_LoadWeights" />
+    <bpmn:messageFlow id="MF_Ready" name="status=ready|error" sourceRef="Activity_LoadWeights" targetRef="Activity_LoadModel" />
+  </bpmn:collaboration>
+
+  <!-- ===================== User ===================== -->
+  <bpmn:process id="Process_User" isExecutable="false">
+    <bpmn:startEvent id="Start_User" name="Старт сессии">
+      <bpmn:outgoing>Flow_U1</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:task id="Activity_OpenApp" name="Открыть http://localhost:3000">
+      <bpmn:incoming>Flow_U1</bpmn:incoming>
+      <bpmn:outgoing>Flow_U2</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_CheckReady" name="Дождаться статуса «Модель готова»">
+      <bpmn:incoming>Flow_U2</bpmn:incoming>
+      <bpmn:outgoing>Flow_U3</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_LoadStyles" name="Просмотреть список стилей">
+      <bpmn:incoming>Flow_U3</bpmn:incoming>
+      <bpmn:outgoing>Flow_U4</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_EnterText" name="Ввести текст и выбрать стиль">
+      <bpmn:incoming>Flow_U4</bpmn:incoming>
+      <bpmn:outgoing>Flow_U5</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_Submit" name="Нажать «Перефразировать»">
+      <bpmn:incoming>Flow_U5</bpmn:incoming>
+      <bpmn:outgoing>Flow_U6</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_ShowResult" name="Просмотреть результат / сообщение об ошибке">
+      <bpmn:incoming>Flow_U6</bpmn:incoming>
+      <bpmn:outgoing>Flow_U7</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:exclusiveGateway id="Gateway_Again" name="Ещё запрос?">
+      <bpmn:incoming>Flow_U7</bpmn:incoming>
+      <bpmn:outgoing>Flow_U8_yes</bpmn:outgoing>
+      <bpmn:outgoing>Flow_U8_no</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:endEvent id="End_User" name="Конец сессии">
+      <bpmn:incoming>Flow_U8_no</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_U1" sourceRef="Start_User" targetRef="Activity_OpenApp" />
+    <bpmn:sequenceFlow id="Flow_U2" sourceRef="Activity_OpenApp" targetRef="Activity_CheckReady" />
+    <bpmn:sequenceFlow id="Flow_U3" sourceRef="Activity_CheckReady" targetRef="Activity_LoadStyles" />
+    <bpmn:sequenceFlow id="Flow_U4" sourceRef="Activity_LoadStyles" targetRef="Activity_EnterText" />
+    <bpmn:sequenceFlow id="Flow_U5" sourceRef="Activity_EnterText" targetRef="Activity_Submit" />
+    <bpmn:sequenceFlow id="Flow_U6" sourceRef="Activity_Submit" targetRef="Activity_ShowResult" />
+    <bpmn:sequenceFlow id="Flow_U7" sourceRef="Activity_ShowResult" targetRef="Gateway_Again" />
+    <bpmn:sequenceFlow id="Flow_U8_yes" name="да" sourceRef="Gateway_Again" targetRef="Activity_EnterText" />
+    <bpmn:sequenceFlow id="Flow_U8_no" name="нет" sourceRef="Gateway_Again" targetRef="End_User" />
+  </bpmn:process>
+
+  <!-- ===================== Service ===================== -->
+  <bpmn:process id="Process_Service" isExecutable="false">
+    <bpmn:laneSet id="LaneSet_Service">
+      <bpmn:lane id="Lane_Lifecycle" name="Жизненный цикл сервиса">
+        <bpmn:flowNodeRef>Start_Service</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Activity_Boot</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Activity_LoadModel</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_LoadOk</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Activity_MarkReady</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Activity_MarkError</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Activity_Listen</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Lane_API" name="Обработка запросов API">
+        <bpmn:flowNodeRef>Activity_ServeUI</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Activity_Health</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Activity_Styles</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Activity_ReceiveRewrite</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_Status</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Activity_Validate</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_Valid</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Activity_CallModel</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Activity_Postprocess</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gateway_Empty</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Activity_Respond</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>End_Request</bpmn:flowNodeRef>
+      </bpmn:lane>
+    </bpmn:laneSet>
+
+    <bpmn:startEvent id="Start_Service" name="poetry run styleshift">
+      <bpmn:outgoing>Flow_S1</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:task id="Activity_Boot" name="Создать Flask app, запустить фоновую загрузку">
+      <bpmn:incoming>Flow_S1</bpmn:incoming>
+      <bpmn:outgoing>Flow_S2</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_LoadModel" name="Загрузить токенизатор и веса модели">
+      <bpmn:incoming>Flow_S2</bpmn:incoming>
+      <bpmn:outgoing>Flow_S3</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:exclusiveGateway id="Gateway_LoadOk" name="Загрузка успешна?">
+      <bpmn:incoming>Flow_S3</bpmn:incoming>
+      <bpmn:outgoing>Flow_S4_ok</bpmn:outgoing>
+      <bpmn:outgoing>Flow_S4_fail</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:task id="Activity_MarkReady" name="status = ready">
+      <bpmn:incoming>Flow_S4_ok</bpmn:incoming>
+      <bpmn:outgoing>Flow_S5</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_MarkError" name="status = error, зафиксировать сообщение">
+      <bpmn:incoming>Flow_S4_fail</bpmn:incoming>
+      <bpmn:outgoing>Flow_S5e</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_Listen" name="Слушать 127.0.0.1:3000">
+      <bpmn:incoming>Flow_S5</bpmn:incoming>
+      <bpmn:incoming>Flow_S5e</bpmn:incoming>
+      <bpmn:outgoing>Flow_S6</bpmn:outgoing>
+    </bpmn:task>
+
+    <bpmn:task id="Activity_ServeUI" name="Отдать static UI (GET /)">
+      <bpmn:incoming>Flow_S6</bpmn:incoming>
+      <bpmn:outgoing>Flow_S7a</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_Health" name="Вернуть health (loading|ready|error)">
+      <bpmn:incoming>Flow_S7a</bpmn:incoming>
+      <bpmn:outgoing>Flow_S7b</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_Styles" name="Вернуть каталог стилей">
+      <bpmn:incoming>Flow_S7b</bpmn:incoming>
+      <bpmn:outgoing>Flow_S7c</bpmn:outgoing>
+    </bpmn:task>
+
+    <bpmn:task id="Activity_ReceiveRewrite" name="Принять POST /api/rewrite">
+      <bpmn:incoming>Flow_S7c</bpmn:incoming>
+      <bpmn:outgoing>Flow_S8</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:exclusiveGateway id="Gateway_Status" name="Модель ready?">
+      <bpmn:incoming>Flow_S8</bpmn:incoming>
+      <bpmn:outgoing>Flow_S9_yes</bpmn:outgoing>
+      <bpmn:outgoing>Flow_S9_no</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:task id="Activity_Validate" name="Валидация text / style / длины">
+      <bpmn:incoming>Flow_S9_yes</bpmn:incoming>
+      <bpmn:outgoing>Flow_S10</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:exclusiveGateway id="Gateway_Valid" name="Вход корректен?">
+      <bpmn:incoming>Flow_S10</bpmn:incoming>
+      <bpmn:outgoing>Flow_S11_yes</bpmn:outgoing>
+      <bpmn:outgoing>Flow_S11_no</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:task id="Activity_CallModel" name="Собрать chat-промпт и вызвать generate">
+      <bpmn:incoming>Flow_S11_yes</bpmn:incoming>
+      <bpmn:outgoing>Flow_S12</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_Postprocess" name="Декодировать токены, clean_reply">
+      <bpmn:incoming>Flow_S12</bpmn:incoming>
+      <bpmn:outgoing>Flow_S13</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:exclusiveGateway id="Gateway_Empty" name="Ответ непустой?">
+      <bpmn:incoming>Flow_S13</bpmn:incoming>
+      <bpmn:outgoing>Flow_S14_yes</bpmn:outgoing>
+      <bpmn:outgoing>Flow_S14_no</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:task id="Activity_Respond" name="Сформировать HTTP-ответ (200/400/500/503)">
+      <bpmn:incoming>Flow_S9_no</bpmn:incoming>
+      <bpmn:incoming>Flow_S11_no</bpmn:incoming>
+      <bpmn:incoming>Flow_S14_yes</bpmn:incoming>
+      <bpmn:incoming>Flow_S14_no</bpmn:incoming>
+      <bpmn:outgoing>Flow_S15</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:endEvent id="End_Request" name="Ответ отправлен">
+      <bpmn:incoming>Flow_S15</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <bpmn:sequenceFlow id="Flow_S1" sourceRef="Start_Service" targetRef="Activity_Boot" />
+    <bpmn:sequenceFlow id="Flow_S2" sourceRef="Activity_Boot" targetRef="Activity_LoadModel" />
+    <bpmn:sequenceFlow id="Flow_S3" sourceRef="Activity_LoadModel" targetRef="Gateway_LoadOk" />
+    <bpmn:sequenceFlow id="Flow_S4_ok" name="да" sourceRef="Gateway_LoadOk" targetRef="Activity_MarkReady" />
+    <bpmn:sequenceFlow id="Flow_S4_fail" name="нет" sourceRef="Gateway_LoadOk" targetRef="Activity_MarkError" />
+    <bpmn:sequenceFlow id="Flow_S5" sourceRef="Activity_MarkReady" targetRef="Activity_Listen" />
+    <bpmn:sequenceFlow id="Flow_S5e" sourceRef="Activity_MarkError" targetRef="Activity_Listen" />
+    <bpmn:sequenceFlow id="Flow_S6" sourceRef="Activity_Listen" targetRef="Activity_ServeUI" />
+    <bpmn:sequenceFlow id="Flow_S7a" sourceRef="Activity_ServeUI" targetRef="Activity_Health" />
+    <bpmn:sequenceFlow id="Flow_S7b" sourceRef="Activity_Health" targetRef="Activity_Styles" />
+    <bpmn:sequenceFlow id="Flow_S7c" sourceRef="Activity_Styles" targetRef="Activity_ReceiveRewrite" />
+    <bpmn:sequenceFlow id="Flow_S8" sourceRef="Activity_ReceiveRewrite" targetRef="Gateway_Status" />
+    <bpmn:sequenceFlow id="Flow_S9_yes" name="да" sourceRef="Gateway_Status" targetRef="Activity_Validate" />
+    <bpmn:sequenceFlow id="Flow_S9_no" name="нет → 503" sourceRef="Gateway_Status" targetRef="Activity_Respond" />
+    <bpmn:sequenceFlow id="Flow_S10" sourceRef="Activity_Validate" targetRef="Gateway_Valid" />
+    <bpmn:sequenceFlow id="Flow_S11_yes" name="да" sourceRef="Gateway_Valid" targetRef="Activity_CallModel" />
+    <bpmn:sequenceFlow id="Flow_S11_no" name="нет → 400" sourceRef="Gateway_Valid" targetRef="Activity_Respond" />
+    <bpmn:sequenceFlow id="Flow_S12" sourceRef="Activity_CallModel" targetRef="Activity_Postprocess" />
+    <bpmn:sequenceFlow id="Flow_S13" sourceRef="Activity_Postprocess" targetRef="Gateway_Empty" />
+    <bpmn:sequenceFlow id="Flow_S14_yes" name="да → 200" sourceRef="Gateway_Empty" targetRef="Activity_Respond" />
+    <bpmn:sequenceFlow id="Flow_S14_no" name="нет → 500" sourceRef="Gateway_Empty" targetRef="Activity_Respond" />
+    <bpmn:sequenceFlow id="Flow_S15" sourceRef="Activity_Respond" targetRef="End_Request" />
+  </bpmn:process>
+
+  <!-- ===================== Model ===================== -->
+  <bpmn:process id="Process_Model" isExecutable="false">
+    <bpmn:startEvent id="Start_Model" name="Запрос от сервиса">
+      <bpmn:outgoing>Flow_M1</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:task id="Activity_LoadWeights" name="Загрузить веса из кэша HF или скачать">
+      <bpmn:incoming>Flow_M1</bpmn:incoming>
+      <bpmn:outgoing>Flow_M2</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Activity_Generate" name="Авторегрессионная генерация (CPU, sampling)">
+      <bpmn:incoming>Flow_M2</bpmn:incoming>
+      <bpmn:outgoing>Flow_M3</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:endEvent id="End_Model" name="Токены возвращены">
+      <bpmn:incoming>Flow_M3</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="Flow_M1" sourceRef="Start_Model" targetRef="Activity_LoadWeights" />
+    <bpmn:sequenceFlow id="Flow_M2" sourceRef="Activity_LoadWeights" targetRef="Activity_Generate" />
+    <bpmn:sequenceFlow id="Flow_M3" sourceRef="Activity_Generate" targetRef="End_Model" />
+  </bpmn:process>
+
+  <!-- ===================== Diagram (layout) ===================== -->
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="Collaboration_StyleShift">
+      <bpmndi:BPMNShape id="Shape_Participant_User" bpmnElement="Participant_User" isHorizontal="true">
+        <dc:Bounds x="160" y="80" width="1180" height="160" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Participant_Service" bpmnElement="Participant_Service" isHorizontal="true">
+        <dc:Bounds x="160" y="280" width="1180" height="360" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Participant_Model" bpmnElement="Participant_Model" isHorizontal="true">
+        <dc:Bounds x="160" y="680" width="1180" height="140" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Shape_Start_User" bpmnElement="Start_User">
+        <dc:Bounds x="200" y="142" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_OpenApp" bpmnElement="Activity_OpenApp">
+        <dc:Bounds x="270" y="120" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_CheckReady" bpmnElement="Activity_CheckReady">
+        <dc:Bounds x="430" y="120" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_LoadStyles" bpmnElement="Activity_LoadStyles">
+        <dc:Bounds x="590" y="120" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_EnterText" bpmnElement="Activity_EnterText">
+        <dc:Bounds x="750" y="120" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Submit" bpmnElement="Activity_Submit">
+        <dc:Bounds x="910" y="120" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_ShowResult" bpmnElement="Activity_ShowResult">
+        <dc:Bounds x="1070" y="120" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Gateway_Again" bpmnElement="Gateway_Again" isMarkerVisible="true">
+        <dc:Bounds x="1230" y="135" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_End_User" bpmnElement="End_User">
+        <dc:Bounds x="1310" y="142" width="36" height="36" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Shape_Start_Service" bpmnElement="Start_Service">
+        <dc:Bounds x="200" y="342" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Boot" bpmnElement="Activity_Boot">
+        <dc:Bounds x="270" y="320" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_LoadModel" bpmnElement="Activity_LoadModel">
+        <dc:Bounds x="430" y="320" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Gateway_LoadOk" bpmnElement="Gateway_LoadOk" isMarkerVisible="true">
+        <dc:Bounds x="590" y="335" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_MarkReady" bpmnElement="Activity_MarkReady">
+        <dc:Bounds x="680" y="300" width="110" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_MarkError" bpmnElement="Activity_MarkError">
+        <dc:Bounds x="680" y="370" width="110" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Listen" bpmnElement="Activity_Listen">
+        <dc:Bounds x="830" y="320" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_ServeUI" bpmnElement="Activity_ServeUI">
+        <dc:Bounds x="200" y="480" width="100" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Health" bpmnElement="Activity_Health">
+        <dc:Bounds x="330" y="480" width="100" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Styles" bpmnElement="Activity_Styles">
+        <dc:Bounds x="460" y="480" width="100" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_ReceiveRewrite" bpmnElement="Activity_ReceiveRewrite">
+        <dc:Bounds x="590" y="480" width="110" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Gateway_Status" bpmnElement="Gateway_Status" isMarkerVisible="true">
+        <dc:Bounds x="740" y="490" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Validate" bpmnElement="Activity_Validate">
+        <dc:Bounds x="820" y="480" width="110" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Gateway_Valid" bpmnElement="Gateway_Valid" isMarkerVisible="true">
+        <dc:Bounds x="960" y="490" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_CallModel" bpmnElement="Activity_CallModel">
+        <dc:Bounds x="1040" y="480" width="120" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Postprocess" bpmnElement="Activity_Postprocess">
+        <dc:Bounds x="1180" y="480" width="110" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Gateway_Empty" bpmnElement="Gateway_Empty" isMarkerVisible="true">
+        <dc:Bounds x="1180" y="575" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Respond" bpmnElement="Activity_Respond">
+        <dc:Bounds x="1040" y="560" width="120" height="70" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_End_Request" bpmnElement="End_Request">
+        <dc:Bounds x="960" y="577" width="36" height="36" />
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNShape id="Shape_Start_Model" bpmnElement="Start_Model">
+        <dc:Bounds x="200" y="732" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_LoadWeights" bpmnElement="Activity_LoadWeights">
+        <dc:Bounds x="430" y="710" width="140" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_Generate" bpmnElement="Activity_Generate">
+        <dc:Bounds x="1040" y="710" width="140" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Shape_End_Model" bpmnElement="End_Model">
+        <dc:Bounds x="1220" y="732" width="36" height="36" />
+      </bpmndi:BPMNShape>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>
